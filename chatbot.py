@@ -5,11 +5,12 @@ from nltk.sem import Expression
 from nltk.inference import ResolutionProver
 
 class Chatbot(tk.Frame):
-    def __init__(self, parent, kern, *args, **kwargs):
+    def __init__(self, parent, kern, kb, *args, **kwargs):
         tk.Frame.__init__(self, parent, *args, **kwargs)
         self.parent = parent
         self.kern = kern
         self.response_agent = "aiml"
+        self.kb = kb
 
         # setup aiml kernel
         kern.setTextEncoding(None)
@@ -20,7 +21,7 @@ class Chatbot(tk.Frame):
         parent.geometry("400x500")
         parent.resizable(width=False, height=False)
 
-        self.chat_window = tk.Text(parent, bd=1, bg="black",  width="50", height="8", font=("Calibri", 14), foreground="#00ffff")
+        self.chat_window = tk.Text(parent, bd=1, bg="black",  width="50", height="8", font=("Calibri", 12), foreground="#00ffff")
         self.chat_window.place(x=6,y=6, height=385, width=370)
         self.chat_window.tag_config('bot', foreground="white")
 
@@ -50,6 +51,27 @@ class Chatbot(tk.Frame):
     def set_response_agent(self, agent):
         self.response_agent = agent
 
+    def already_exists(self, expr):
+        match = False
+        for row in self.kb:
+            if row == expr:
+                match = True
+        return match
+
+    def contradicts_positive(self, object_, subject_):
+        contradicts = False
+        expr = read_expr('-' + subject_ + '(' + object_ + ')')
+        if self.already_exists(expr):
+            contradicts = True
+        return contradicts
+
+    def contradicts_negative(self, object_, subject_):
+        contradicts = False
+        expr = read_expr(subject_ + '(' + object_ + ')')
+        if self.already_exists(expr):
+            contradicts = True
+        return contradicts
+
     def post_process(self):
         msg = self.get_gui_input()
         if self.response_agent == 'aiml':
@@ -65,29 +87,43 @@ class Chatbot(tk.Frame):
             elif cmd == 31:
                 # "i know that * is *"
                 object, subject = params[1].split(' is ')
-                expr=read_expr(subject + '(' + object + ')')
+                expr = read_expr(subject + '(' + object + ')')
                 # check if already exists
+                if not self.already_exists(expr):
                 # check if contradicts
-                kb.append(expr)
-                self.display_message_bot("OK, I will remember that {object} is {subject}.".format(object=object, subject=subject))
+                    if not self.contradicts_positive(object, subject):
+                        kb.append(expr)
+                        self.display_message_bot("OK, I will remember that {object} is {subject}.".format(object=object, subject=subject))
+                    else:
+                        self.display_message_bot("This statement contradicts what I already know.")
+                else:
+                    self.display_message_bot("Statement already exists.")
+
             elif cmd == 32:
                 # "check that * is *"
                 object,subject=params[1].split(' is ')
-                expr=read_expr(subject + '(' + object + ')')
+                expr = read_expr(subject + '(' + object + ')')
                 res = ResolutionProver().prove(expr, kb, verbose=True)
                 if res:
                     self.display_message_bot("Correct.")
                 else:
                     self.display_message_bot("Incorrect.") 
+
             elif cmd == 33:
                 # "i know that * is not *"
                 object, subject = params[1].split(' is ')
-                expr=read_expr('-' + subject + '(' + object + ')')
+                expr = read_expr('-' + subject + '(' + object + ')')
                 # check if already exists
+                if not self.already_exists(expr):
                 # check if contradicts
-                kb.append(expr)
-                self.display_message_bot("OK, I will remember that {object} is not {subject}.".format(object=object, subject=subject))
-                pass
+                    if not self.contradicts_negative(object, subject):
+                        kb.append(expr)
+                        self.display_message_bot("OK, I will remember that {object} is {subject}.".format(object=object, subject=subject))
+                    else:
+                        self.display_message_bot("This statement contradicts what I already know.")
+                else:
+                    self.display_message_bot("Statement already exists.")
+
             elif cmd == 99:
                 self.display_message_bot("Sorry, I did not get that.")
         else:
@@ -117,5 +153,5 @@ if __name__ == "__main__":
     kb=[]
     data = pd.read_csv('kb.csv', header=None)
     [kb.append(read_expr(row)) for row in data[0]]
-    Chatbot(root, kern)
+    Chatbot(root, kern, kb)
     root.mainloop()
