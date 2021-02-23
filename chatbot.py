@@ -3,14 +3,16 @@ import aiml
 import pandas as pd
 from nltk.sem import Expression
 from nltk.inference import ResolutionProver
+import time
 
 class Chatbot(tk.Frame):
-    def __init__(self, parent, kern, kb, *args, **kwargs):
+    def __init__(self, parent, kern, kb, csv, *args, **kwargs):
         tk.Frame.__init__(self, parent, *args, **kwargs)
         self.parent = parent
         self.kern = kern
         self.response_agent = "aiml"
         self.kb = kb
+        self.csv = csv
 
         # setup aiml kernel
         kern.setTextEncoding(None)
@@ -25,9 +27,6 @@ class Chatbot(tk.Frame):
         self.chat_window.place(x=6,y=6, height=385, width=370)
         self.chat_window.tag_config('bot', foreground="white")
 
-        # greet user
-        self.chat_window.insert("end", "Chatbot: " + "Hi! I'm Chatbot, how are you today?"+ "\n", "bot")
-
         self.message_window = tk.Text(parent, bd=0, bg="black",width="30", height="4", font=("Calibri", 14), foreground="#00ffff")
         self.message_window.place(x=128, y=400, height=88, width=260)
 
@@ -37,13 +36,22 @@ class Chatbot(tk.Frame):
         self.send_button = tk.Button(parent, text="Send",  width="12", height=5, command=self.on_click_send_button, bd=0, bg="#0080ff", activebackground="#00bfff",foreground='#ffffff',font=("Arial", 12))
         self.send_button.place(x=6, y=400, height=88)
 
+        # check the csv integrity
+        if self.check_csv():
+            self.chat_window.insert("end", "Chatbot: " + "There appears to be an issue with the integrity of the kb provided."+ "\n", "bot")
+        else:
+            # greet user
+            self.chat_window.insert("end", "Chatbot: " + "Hi! I'm Chatbot, how are you today?"+ "\n", "bot")
+
+
     def get_gui_input(self):
         msg = self.message_window.get("1.0", "end")
-        self.message_window.delete("1.0", "end")
+
         return msg
 
     def display_message_usr(self, msg):
         self.chat_window.insert("end", "You: " + msg)
+        self.message_window.delete("1.0", "end")
 
     def display_message_bot(self, msg):
         self.chat_window.insert("end", "Chatbot: " + msg + "\n", "bot")
@@ -58,19 +66,21 @@ class Chatbot(tk.Frame):
                 match = True
         return match
 
-    def contradicts_positive(self, object_, subject_):
+    def check_contradicts(self, expr):
         contradicts = False
-        expr = read_expr('-' + subject_ + '(' + object_ + ')')
-        if self.already_exists(expr):
+        negative_expr = Expression.negate(expr)
+        res = ResolutionProver().prove(negative_expr, self.kb, verbose=True)
+        if res:
             contradicts = True
         return contradicts
 
-    def contradicts_negative(self, object_, subject_):
-        contradicts = False
-        expr = read_expr(subject_ + '(' + object_ + ')')
-        if self.already_exists(expr):
-            contradicts = True
-        return contradicts
+    def check_csv(self):
+        error = False
+        for expr in kb:
+            negative_expr = Expression.negate(expr)
+            if ResolutionProver().prove(negative_expr, self.kb, verbose=True):
+                error = True
+        return error
 
     def post_process(self):
         msg = self.get_gui_input()
@@ -91,11 +101,11 @@ class Chatbot(tk.Frame):
                 # check if already exists
                 if not self.already_exists(expr):
                 # check if contradicts
-                    if not self.contradicts_positive(object, subject):
+                    if not self.check_contradicts(expr):
                         kb.append(expr)
                         self.display_message_bot("OK, I will remember that {object} is {subject}.".format(object=object, subject=subject))
                     else:
-                        self.display_message_bot("This statement contradicts what I already know.")
+                        self.display_message_bot("This contradicts what I already know.")
                 else:
                     self.display_message_bot("Statement already exists.")
 
@@ -104,10 +114,13 @@ class Chatbot(tk.Frame):
                 object,subject=params[1].split(' is ')
                 expr = read_expr(subject + '(' + object + ')')
                 res = ResolutionProver().prove(expr, kb, verbose=True)
-                if res:
+                print(res)
+                if res == True:
                     self.display_message_bot("Correct.")
-                else:
+                elif res == False:
                     self.display_message_bot("Incorrect.") 
+                else:
+                    self.display_message_bot("I don't know about that.") 
 
             elif cmd == 33:
                 # "i know that * is not *"
@@ -116,11 +129,11 @@ class Chatbot(tk.Frame):
                 # check if already exists
                 if not self.already_exists(expr):
                 # check if contradicts
-                    if not self.contradicts_negative(object, subject):
+                    if not self.check_contradicts(expr):
                         kb.append(expr)
-                        self.display_message_bot("OK, I will remember that {object} is {subject}.".format(object=object, subject=subject))
+                        self.display_message_bot("OK, I will remember that {object} is not {subject}.".format(object=object, subject=subject))
                     else:
-                        self.display_message_bot("This statement contradicts what I already know.")
+                        self.display_message_bot("This contradicts what I already know.")
                 else:
                     self.display_message_bot("Statement already exists.")
 
@@ -132,17 +145,6 @@ class Chatbot(tk.Frame):
     def on_click_send_button(self):
         self.post_process()
 
-class ChatbotLogic():
-    def __init__(self, kern):
-        self.kern = kern
-        self.input = ""
-
-    def set_input(self, input):
-        self.input = input
-
-    def get_input(self):
-        return self.input
-
 if __name__ == "__main__":
     # initialize tkinter
     root = tk.Tk()
@@ -153,5 +155,5 @@ if __name__ == "__main__":
     kb=[]
     data = pd.read_csv('kb.csv', header=None)
     [kb.append(read_expr(row)) for row in data[0]]
-    Chatbot(root, kern, kb)
+    Chatbot(root, kern, kb, data)
     root.mainloop()
