@@ -113,7 +113,7 @@ class Chatbot(tk.Frame):
                 # "check that * is *"
                 object,subject=params[1].split(' is ')
                 expr = read_expr(subject + '(' + object + ')')
-                res = ResolutionProver().prove(expr, kb, verbose=True)
+                res = ResolutionProver.prove(expr, kb, verbose=True)
                 print(res)
                 if res == True:
                     self.display_message_bot("Correct.")
